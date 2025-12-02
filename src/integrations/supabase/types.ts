@@ -102,10 +102,12 @@ export type Database = {
           image_url: string | null
           is_active: boolean | null
           last_repriced_at: string | null
+          last_synced_at: string | null
           max_price: number | null
           min_price: number | null
           sku: string
           stock_quantity: number | null
+          takealot_offer_id: string | null
           title: string
           updated_at: string
           user_id: string
@@ -121,10 +123,12 @@ export type Database = {
           image_url?: string | null
           is_active?: boolean | null
           last_repriced_at?: string | null
+          last_synced_at?: string | null
           max_price?: number | null
           min_price?: number | null
           sku: string
           stock_quantity?: number | null
+          takealot_offer_id?: string | null
           title: string
           updated_at?: string
           user_id: string
@@ -140,10 +144,12 @@ export type Database = {
           image_url?: string | null
           is_active?: boolean | null
           last_repriced_at?: string | null
+          last_synced_at?: string | null
           max_price?: number | null
           min_price?: number | null
           sku?: string
           stock_quantity?: number | null
+          takealot_offer_id?: string | null
           title?: string
           updated_at?: string
           user_id?: string
@@ -271,6 +277,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      webhook_events: {
+        Row: {
+          created_at: string
+          event_type: string
+          id: string
+          payload: Json
+          processed: boolean | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          event_type: string
+          id?: string
+          payload: Json
+          processed?: boolean | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          event_type?: string
+          id?: string
+          payload?: Json
+          processed?: boolean | null
+          user_id?: string
+        }
+        Relationships: []
       }
     }
     Views: {

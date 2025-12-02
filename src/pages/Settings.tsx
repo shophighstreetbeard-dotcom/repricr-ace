@@ -7,11 +7,12 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
-import { User, Bell, Shield, Key, Save, Loader2 } from 'lucide-react';
+import { User, Bell, Shield, Key, Save, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { Badge } from '@/components/ui/badge';
 
 export default function Settings() {
   const { user } = useAuth();
@@ -30,6 +31,22 @@ export default function Settings() {
         .maybeSingle();
       if (error) throw error;
       return data;
+    },
+    enabled: !!user?.id,
+  });
+
+  const { data: lastSync } = useQuery({
+    queryKey: ['last-sync', user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('products')
+        .select('last_synced_at')
+        .eq('user_id', user?.id)
+        .order('last_synced_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data?.last_synced_at;
     },
     enabled: !!user?.id,
   });
@@ -140,6 +157,29 @@ export default function Settings() {
               <CardDescription>Connect your Takealot seller account</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              <div className="rounded-lg border border-border p-4 bg-muted/50 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Connection Status</span>
+                  {takealotApiKey ? (
+                    <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
+                      <CheckCircle2 className="w-3 h-3 mr-1" />
+                      Connected
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline">
+                      <XCircle className="w-3 h-3 mr-1" />
+                      Not Connected
+                    </Badge>
+                  )}
+                </div>
+                {lastSync && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Last Sync</span>
+                    <span className="font-mono">{new Date(lastSync).toLocaleString()}</span>
+                  </div>
+                )}
+              </div>
+              <Separator />
               <div className="space-y-2">
                 <Label htmlFor="takealotKey">Takealot API Key</Label>
                 <Input
@@ -154,14 +194,39 @@ export default function Settings() {
                 </p>
               </div>
               <Separator />
-              <div className="rounded-lg border border-border p-4 bg-muted/50">
-                <h4 className="font-semibold mb-2">How to get your API key</h4>
-                <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
-                  <li>Log in to your Takealot Seller Portal</li>
-                  <li>Navigate to Settings → API Access</li>
-                  <li>Generate a new API key</li>
-                  <li>Copy and paste it here</li>
-                </ol>
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-semibold mb-2">Webhook URL</h4>
+                  <p className="text-sm text-muted-foreground mb-2">
+                    Configure this URL in your Takealot Seller Portal to receive real-time updates:
+                  </p>
+                  <div className="flex gap-2">
+                    <Input
+                      value="https://kwrqqqiusycljrwhtbzh.supabase.co/functions/v1/takealot-webhook"
+                      readOnly
+                      className="font-mono text-xs"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        navigator.clipboard.writeText('https://kwrqqqiusycljrwhtbzh.supabase.co/functions/v1/takealot-webhook');
+                        toast.success('Webhook URL copied!');
+                      }}
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border p-4 bg-muted/50">
+                  <h4 className="font-semibold mb-2">Setup Instructions</h4>
+                  <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
+                    <li>Log in to your Takealot Seller Portal</li>
+                    <li>Navigate to Settings → API Access</li>
+                    <li>Generate a new API key and paste it above</li>
+                    <li>Add the webhook URL to receive real-time updates</li>
+                    <li>Save your settings and sync products from the Products page</li>
+                  </ol>
+                </div>
               </div>
               <Button 
                 onClick={() => updateProfile.mutate()} 

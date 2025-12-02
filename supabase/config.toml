@@ -1,1 +1,4 @@
 project_id = "kwrqqqiusycljrwhtbzh"
+
+[functions.takealot-webhook]
+verify_jwt = false
