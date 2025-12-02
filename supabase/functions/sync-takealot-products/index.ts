@@ -9,10 +9,11 @@ interface TakealotProduct {
   offer_id: string;
   sku: string;
   title: string;
-  price: number;
-  stock: number;
+  selling_price: number;
+  leadtime_stock?: number;
+  warehouse_stock?: number;
   image_url?: string;
-  buy_box_status?: string;
+  buy_box_winner?: boolean;
 }
 
 Deno.serve(async (req) => {
@@ -46,24 +47,28 @@ Deno.serve(async (req) => {
     }
 
     console.log(`Syncing products for user ${user.id}`);
+    console.log(`Using API key: ${takealotApiKey.substring(0, 10)}...`);
 
-    // Fetch products from Takealot API
-    // NOTE: Replace this URL with the actual Takealot API endpoint
-    const takealotResponse = await fetch('https://seller-api.takealot.com/v1/offers', {
+    // Fetch products from Takealot API - Official endpoint
+    const takealotResponse = await fetch('https://seller-api.takealot.com/v2/offers', {
       headers: {
-        'Authorization': `Bearer ${takealotApiKey}`,
+        'Authorization': `Key ${takealotApiKey}`,
         'Content-Type': 'application/json',
       },
     });
 
+    console.log(`Takealot API response status: ${takealotResponse.status}`);
+
     if (!takealotResponse.ok) {
       const errorText = await takealotResponse.text();
-      console.error('Takealot API error:', errorText);
-      throw new Error(`Takealot API error: ${takealotResponse.status}`);
+      console.error('Takealot API error response:', errorText);
+      console.error('Response status:', takealotResponse.status);
+      console.error('Response headers:', Object.fromEntries(takealotResponse.headers.entries()));
+      throw new Error(`Takealot API error: ${takealotResponse.status} - ${errorText.substring(0, 200)}`);
     }
 
     const takealotData = await takealotResponse.json();
-    const products: TakealotProduct[] = takealotData.offers || [];
+    const products: TakealotProduct[] = takealotData.data || [];
 
     console.log(`Fetched ${products.length} products from Takealot`);
 
@@ -73,6 +78,8 @@ Deno.serve(async (req) => {
 
     // Process each product
     for (const takealotProduct of products) {
+      const stock = (takealotProduct.leadtime_stock || 0) + (takealotProduct.warehouse_stock || 0);
+      
       // Check if product exists
       const { data: existingProducts } = await supabase
         .from('products')
@@ -87,11 +94,11 @@ Deno.serve(async (req) => {
         const existing = existingProducts[0];
         
         // Log price change if price changed
-        if (existing.current_price !== takealotProduct.price) {
+        if (existing.current_price !== takealotProduct.selling_price) {
           await supabase.from('price_history').insert({
             product_id: existing.id,
             old_price: existing.current_price,
-            new_price: takealotProduct.price,
+            new_price: takealotProduct.selling_price,
             reason: 'Takealot sync',
           });
         }
@@ -100,12 +107,12 @@ Deno.serve(async (req) => {
           .from('products')
           .update({
             title: takealotProduct.title,
-            current_price: takealotProduct.price,
-            stock_quantity: takealotProduct.stock,
+            current_price: takealotProduct.selling_price,
+            stock_quantity: stock,
             takealot_offer_id: takealotProduct.offer_id,
             last_synced_at: now,
             image_url: takealotProduct.image_url || existing.image_url,
-            buy_box_status: takealotProduct.buy_box_status || existing.buy_box_status,
+            buy_box_status: takealotProduct.buy_box_winner ? 'won' : 'lost',
           })
           .eq('id', existing.id);
         
@@ -116,12 +123,12 @@ Deno.serve(async (req) => {
           user_id: user.id,
           sku: takealotProduct.sku,
           title: takealotProduct.title,
-          current_price: takealotProduct.price,
-          stock_quantity: takealotProduct.stock,
+          current_price: takealotProduct.selling_price,
+          stock_quantity: stock,
           takealot_offer_id: takealotProduct.offer_id,
           last_synced_at: now,
           image_url: takealotProduct.image_url,
-          buy_box_status: takealotProduct.buy_box_status || 'unknown',
+          buy_box_status: takealotProduct.buy_box_winner ? 'won' : 'unknown',
           is_active: true,
         });
         

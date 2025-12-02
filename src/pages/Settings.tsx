@@ -219,13 +219,29 @@ export default function Settings() {
                 </div>
                 <div className="rounded-lg border border-border p-4 bg-muted/50">
                   <h4 className="font-semibold mb-2">Setup Instructions</h4>
-                  <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
-                    <li>Log in to your Takealot Seller Portal</li>
+                  <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
+                    <li>Log in to your <a href="https://seller.takealot.com" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">Takealot Seller Portal</a></li>
                     <li>Navigate to Settings → API Access</li>
-                    <li>Generate a new API key and paste it above</li>
-                    <li>Add the webhook URL to receive real-time updates</li>
-                    <li>Save your settings and sync products from the Products page</li>
+                    <li>Generate a new API key and paste it in the field above</li>
+                    <li>
+                      <strong className="text-foreground">Important:</strong> Copy your API key exactly as shown (it usually starts with a long alphanumeric string)
+                    </li>
+                    <li>Add the webhook URL above to receive real-time updates (optional)</li>
+                    <li>Click "Save API Key" below, then go to the Products page</li>
+                    <li>Click "Sync from Takealot" to import your products</li>
                   </ol>
+                </div>
+                <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-4">
+                  <h4 className="font-semibold mb-2 text-yellow-600 dark:text-yellow-400 flex items-center gap-2">
+                    <Bell className="w-4 h-4" />
+                    Troubleshooting
+                  </h4>
+                  <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+                    <li>If you get a 401 error, double-check your API key is correct</li>
+                    <li>Make sure you copied the entire API key without extra spaces</li>
+                    <li>The API key should be saved in your Takealot Seller Portal first</li>
+                    <li>Contact Takealot support if you can't find the API section</li>
+                  </ul>
                 </div>
               </div>
               <Button 
