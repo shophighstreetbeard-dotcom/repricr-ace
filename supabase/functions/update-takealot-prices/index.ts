@@ -78,18 +78,17 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Update price on Takealot
-        // NOTE: Replace this with the actual Takealot API endpoint
+        // Update price on Takealot - Official endpoint
         const takealotResponse = await fetch(
-          `https://seller-api.takealot.com/v1/offers/${product.takealot_offer_id}/price`,
+          `https://seller-api.takealot.com/v2/offers/offer/${product.takealot_offer_id}`,
           {
-            method: 'PUT',
+            method: 'PATCH',
             headers: {
-              'Authorization': `Bearer ${takealotApiKey}`,
+              'Authorization': `Key ${takealotApiKey}`,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              price: update.new_price,
+              selling_price: update.new_price,
             }),
           }
         );
