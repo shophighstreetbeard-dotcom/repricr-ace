@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { z } from 'zod';
 import {
   Table,
   TableBody,
@@ -20,11 +21,21 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Search, Edit, Trash2, Package } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Package, RefreshCw } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+
+const productSchema = z.object({
+  sku: z.string().min(1, 'SKU is required').max(100, 'SKU too long'),
+  title: z.string().min(1, 'Title is required').max(500, 'Title too long'),
+  current_price: z.string().refine(val => !isNaN(parseFloat(val)) && parseFloat(val) > 0, 'Must be a positive number'),
+  min_price: z.string().optional().refine(val => !val || (!isNaN(parseFloat(val)) && parseFloat(val) >= 0), 'Must be a positive number'),
+  max_price: z.string().optional().refine(val => !val || (!isNaN(parseFloat(val)) && parseFloat(val) >= 0), 'Must be a positive number'),
+  cost_price: z.string().optional().refine(val => !val || (!isNaN(parseFloat(val)) && parseFloat(val) >= 0), 'Must be a positive number'),
+  stock_quantity: z.string().optional().refine(val => !val || (!isNaN(parseInt(val)) && parseInt(val) >= 0), 'Must be a positive number'),
+});
 
 export default function Products() {
   const { user } = useAuth();
@@ -57,15 +68,16 @@ export default function Products() {
 
   const addProduct = useMutation({
     mutationFn: async (data: typeof formData) => {
+      const validated = productSchema.parse(data);
       const { error } = await supabase.from('products').insert({
         user_id: user?.id,
-        sku: data.sku,
-        title: data.title,
-        current_price: parseFloat(data.current_price),
-        min_price: data.min_price ? parseFloat(data.min_price) : null,
-        max_price: data.max_price ? parseFloat(data.max_price) : null,
-        cost_price: data.cost_price ? parseFloat(data.cost_price) : null,
-        stock_quantity: data.stock_quantity ? parseInt(data.stock_quantity) : 0,
+        sku: validated.sku,
+        title: validated.title,
+        current_price: parseFloat(validated.current_price),
+        min_price: validated.min_price ? parseFloat(validated.min_price) : null,
+        max_price: validated.max_price ? parseFloat(validated.max_price) : null,
+        cost_price: validated.cost_price ? parseFloat(validated.cost_price) : null,
+        stock_quantity: validated.stock_quantity ? parseInt(validated.stock_quantity) : 0,
       });
       if (error) throw error;
     },
@@ -74,6 +86,21 @@ export default function Products() {
       toast.success('Product added successfully');
       setIsOpen(false);
       setFormData({ sku: '', title: '', current_price: '', min_price: '', max_price: '', cost_price: '', stock_quantity: '' });
+    },
+    onError: (error: any) => {
+      toast.error(error instanceof z.ZodError ? error.errors[0].message : error.message);
+    },
+  });
+
+  const syncProducts = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('sync-takealot-products');
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      toast.success(`Synced ${data.synced} products (${data.created} new, ${data.updated} updated)`);
     },
     onError: (error: any) => {
       toast.error(error.message);
@@ -113,6 +140,14 @@ export default function Products() {
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="font-display">Product Inventory</CardTitle>
           <div className="flex items-center gap-4">
+            <Button 
+              variant="outline" 
+              onClick={() => syncProducts.mutate()}
+              disabled={syncProducts.isPending}
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${syncProducts.isPending ? 'animate-spin' : ''}`} />
+              Sync from Takealot
+            </Button>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { z } from 'zod';
 import {
   Select,
   SelectContent,
@@ -24,6 +25,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+
+const ruleSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(100, 'Name too long'),
+  rule_type: z.enum(['beat_lowest', 'match_buy_box', 'beat_buy_box']),
+  price_adjustment: z.string().refine(val => !isNaN(parseFloat(val)) && parseFloat(val) >= 0, 'Must be a positive number'),
+  adjustment_type: z.enum(['fixed', 'percentage']),
+  min_margin: z.string().optional().refine(val => !val || (!isNaN(parseFloat(val)) && parseFloat(val) >= 0), 'Must be a positive number'),
+});
 
 const ruleTypes = [
   { value: 'beat_lowest', label: 'Beat Lowest Price', icon: TrendingDown, description: 'Always undercut the lowest competitor' },
@@ -59,13 +68,14 @@ export default function Repricing() {
 
   const addRule = useMutation({
     mutationFn: async (data: typeof formData) => {
+      const validated = ruleSchema.parse(data);
       const { error } = await supabase.from('repricing_rules').insert({
         user_id: user?.id,
-        name: data.name,
-        rule_type: data.rule_type,
-        price_adjustment: parseFloat(data.price_adjustment),
-        adjustment_type: data.adjustment_type,
-        min_margin: data.min_margin ? parseFloat(data.min_margin) : null,
+        name: validated.name,
+        rule_type: validated.rule_type,
+        price_adjustment: parseFloat(validated.price_adjustment),
+        adjustment_type: validated.adjustment_type,
+        min_margin: validated.min_margin ? parseFloat(validated.min_margin) : null,
       });
       if (error) throw error;
     },
@@ -76,7 +86,7 @@ export default function Repricing() {
       setFormData({ name: '', rule_type: 'beat_lowest', price_adjustment: '0.01', adjustment_type: 'fixed', min_margin: '' });
     },
     onError: (error: any) => {
-      toast.error(error.message);
+      toast.error(error instanceof z.ZodError ? error.errors[0].message : error.message);
     },
   });
 
