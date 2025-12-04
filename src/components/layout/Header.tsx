@@ -1,7 +1,6 @@
 import { Bell, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { useAuth } from '@/contexts/AuthContext';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
 interface HeaderProps {
@@ -10,10 +9,6 @@ interface HeaderProps {
 }
 
 export default function Header({ title, subtitle }: HeaderProps) {
-  const { user } = useAuth();
-  
-  const initials = user?.email?.slice(0, 2).toUpperCase() || 'U';
-
   return (
     <header className="h-16 border-b border-border bg-card/50 backdrop-blur-sm px-6 flex items-center justify-between">
       <div>
@@ -37,7 +32,7 @@ export default function Header({ title, subtitle }: HeaderProps) {
         
         <Avatar className="h-9 w-9">
           <AvatarFallback className="bg-accent text-accent-foreground text-sm font-medium">
-            {initials}
+            PP
           </AvatarFallback>
         </Avatar>
       </div>
