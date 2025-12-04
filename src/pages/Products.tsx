@@ -24,8 +24,10 @@ import { Badge } from '@/components/ui/badge';
 import { Plus, Search, Edit, Trash2, Package, RefreshCw } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+
+// Fixed user ID for private use
+const PRIVATE_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 const productSchema = z.object({
   sku: z.string().min(1, 'SKU is required').max(100, 'SKU too long'),
@@ -38,7 +40,6 @@ const productSchema = z.object({
 });
 
 export default function Products() {
-  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -53,24 +54,23 @@ export default function Products() {
   });
 
   const { data: products, isLoading } = useQuery({
-    queryKey: ['products', user?.id],
+    queryKey: ['products'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('products')
         .select('*')
-        .eq('user_id', user?.id)
+        .eq('user_id', PRIVATE_USER_ID)
         .order('created_at', { ascending: false });
       if (error) throw error;
       return data;
     },
-    enabled: !!user?.id,
   });
 
   const addProduct = useMutation({
     mutationFn: async (data: typeof formData) => {
       const validated = productSchema.parse(data);
       const { error } = await supabase.from('products').insert({
-        user_id: user?.id,
+        user_id: PRIVATE_USER_ID,
         sku: validated.sku,
         title: validated.title,
         current_price: parseFloat(validated.current_price),
@@ -94,9 +94,15 @@ export default function Products() {
 
   const syncProducts = useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.functions.invoke('sync-takealot-products');
-      if (error) throw error;
-      return data;
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-takealot-products`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Sync failed');
+      }
+      return response.json();
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
@@ -260,7 +266,7 @@ export default function Products() {
             <div className="text-center py-12">
               <Package className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
               <h3 className="font-semibold text-lg mb-2">No products yet</h3>
-              <p className="text-muted-foreground mb-4">Add your first product to get started</p>
+              <p className="text-muted-foreground mb-4">Click "Sync from Takealot" to import your products</p>
             </div>
           ) : (
             <Table>
