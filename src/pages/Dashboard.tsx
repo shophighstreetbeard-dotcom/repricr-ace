@@ -12,47 +12,48 @@ import {
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 
-const mockChartData = [
-  { name: 'Mon', sales: 4000, profit: 2400 },
-  { name: 'Tue', sales: 3000, profit: 1398 },
-  { name: 'Wed', sales: 2000, profit: 9800 },
-  { name: 'Thu', sales: 2780, profit: 3908 },
-  { name: 'Fri', sales: 1890, profit: 4800 },
-  { name: 'Sat', sales: 2390, profit: 3800 },
-  { name: 'Sun', sales: 3490, profit: 4300 },
-];
-
-const buyBoxData = [
-  { name: 'Won', value: 68, color: 'hsl(var(--success))' },
-  { name: 'Lost', value: 25, color: 'hsl(var(--destructive))' },
-  { name: 'Unknown', value: 7, color: 'hsl(var(--muted))' },
-];
+// Fixed user ID for private use
+const PRIVATE_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 export default function Dashboard() {
-  const { user } = useAuth();
-
   const { data: products } = useQuery({
-    queryKey: ['products-count', user?.id],
+    queryKey: ['products-count'],
     queryFn: async () => {
       const { count } = await supabase
         .from('products')
         .select('*', { count: 'exact', head: true })
-        .eq('user_id', user?.id);
+        .eq('user_id', PRIVATE_USER_ID);
       return count || 0;
     },
-    enabled: !!user?.id,
+  });
+
+  const { data: buyBoxStats } = useQuery({
+    queryKey: ['buybox-stats'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('products')
+        .select('buy_box_status')
+        .eq('user_id', PRIVATE_USER_ID);
+      
+      const won = data?.filter(p => p.buy_box_status === 'won').length || 0;
+      const lost = data?.filter(p => p.buy_box_status === 'lost').length || 0;
+      const unknown = data?.filter(p => !p.buy_box_status || p.buy_box_status === 'unknown').length || 0;
+      const total = won + lost + unknown;
+      const winRate = total > 0 ? Math.round((won / total) * 100) : 0;
+      
+      return { won, lost, unknown, winRate };
+    },
   });
 
   const { data: salesData } = useQuery({
-    queryKey: ['sales-summary', user?.id],
+    queryKey: ['sales-summary'],
     queryFn: async () => {
       const { data } = await supabase
         .from('sales')
         .select('sale_price, profit, quantity')
-        .eq('user_id', user?.id);
+        .eq('user_id', PRIVATE_USER_ID);
       
       const totalRevenue = data?.reduce((sum, s) => sum + Number(s.sale_price) * s.quantity, 0) || 0;
       const totalProfit = data?.reduce((sum, s) => sum + (Number(s.profit) || 0), 0) || 0;
@@ -60,8 +61,38 @@ export default function Dashboard() {
       
       return { totalRevenue, totalProfit, totalOrders };
     },
-    enabled: !!user?.id,
   });
+
+  const { data: priceHistory } = useQuery({
+    queryKey: ['price-history-recent'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('price_history')
+        .select(`
+          *,
+          products (sku, title)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(5);
+      return data || [];
+    },
+  });
+
+  const mockChartData = [
+    { name: 'Mon', sales: 4000, profit: 2400 },
+    { name: 'Tue', sales: 3000, profit: 1398 },
+    { name: 'Wed', sales: 2000, profit: 9800 },
+    { name: 'Thu', sales: 2780, profit: 3908 },
+    { name: 'Fri', sales: 1890, profit: 4800 },
+    { name: 'Sat', sales: 2390, profit: 3800 },
+    { name: 'Sun', sales: 3490, profit: 4300 },
+  ];
+
+  const buyBoxData = [
+    { name: 'Won', value: buyBoxStats?.won || 0, color: 'hsl(var(--success))' },
+    { name: 'Lost', value: buyBoxStats?.lost || 0, color: 'hsl(var(--destructive))' },
+    { name: 'Unknown', value: buyBoxStats?.unknown || 0, color: 'hsl(var(--muted))' },
+  ];
 
   const stats = [
     {
@@ -87,15 +118,15 @@ export default function Dashboard() {
     },
     {
       title: 'Buy Box Win Rate',
-      value: '68%',
-      change: '-2.1%',
-      trend: 'down',
+      value: `${buyBoxStats?.winRate || 0}%`,
+      change: buyBoxStats?.winRate && buyBoxStats.winRate > 50 ? '+' : '-',
+      trend: buyBoxStats?.winRate && buyBoxStats.winRate > 50 ? 'up' : 'down',
       icon: Trophy,
     },
   ];
 
   return (
-    <DashboardLayout title="Dashboard" subtitle="Welcome back! Here's your store overview.">
+    <DashboardLayout title="Dashboard" subtitle="Your Takealot repricing overview">
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {stats.map((stat) => (
@@ -183,11 +214,7 @@ export default function Dashboard() {
                       borderRadius: '8px'
                     }} 
                   />
-                  <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                    {buyBoxData.map((entry, index) => (
-                      <Bar key={`bar-${index}`} dataKey="value" fill={entry.color} />
-                    ))}
-                  </Bar>
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]} fill="hsl(var(--accent))" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -202,27 +229,42 @@ export default function Dashboard() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="flex items-center justify-between py-3 border-b border-border last:border-0">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
-                    <Package className="w-5 h-5 text-muted-foreground" />
+            {priceHistory && priceHistory.length > 0 ? (
+              priceHistory.map((item: any) => (
+                <div key={item.id} className="flex items-center justify-between py-3 border-b border-border last:border-0">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
+                      <Package className="w-5 h-5 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">{item.products?.sku || 'Unknown'}</p>
+                      <p className="text-sm text-muted-foreground">{item.reason || 'Price adjusted'}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium text-foreground">Product SKU-{1000 + i}</p>
-                    <p className="text-sm text-muted-foreground">Price adjusted to beat competitor</p>
+                  <div className="text-right">
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground line-through">R {Number(item.old_price).toFixed(2)}</span>
+                      {Number(item.new_price) < Number(item.old_price) ? (
+                        <TrendingDown className="w-4 h-4 text-success" />
+                      ) : (
+                        <TrendingUp className="w-4 h-4 text-destructive" />
+                      )}
+                      <span className={`font-semibold ${Number(item.new_price) < Number(item.old_price) ? 'text-success' : 'text-destructive'}`}>
+                        R {Number(item.new_price).toFixed(2)}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {new Date(item.created_at).toLocaleString()}
+                    </p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground line-through">R {(299 + i * 10).toFixed(2)}</span>
-                    <TrendingDown className="w-4 h-4 text-success" />
-                    <span className="font-semibold text-success">R {(289 + i * 10).toFixed(2)}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">2 hours ago</p>
-                </div>
+              ))
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <Package className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>No price changes yet. Sync products and run the AI repricer to get started.</p>
               </div>
-            ))}
+            )}
           </div>
         </CardContent>
       </Card>

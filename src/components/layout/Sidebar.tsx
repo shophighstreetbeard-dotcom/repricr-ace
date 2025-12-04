@@ -6,10 +6,8 @@ import {
   Users, 
   BarChart3, 
   Settings,
-  TrendingUp,
-  LogOut
+  TrendingUp
 } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 
 const navItems = [
@@ -23,7 +21,6 @@ const navItems = [
 
 export default function Sidebar() {
   const location = useLocation();
-  const { signOut } = useAuth();
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-64 bg-sidebar border-r border-sidebar-border flex flex-col">
@@ -56,17 +53,6 @@ export default function Sidebar() {
           );
         })}
       </nav>
-
-      {/* Sign Out */}
-      <div className="p-4 border-t border-sidebar-border">
-        <button
-          onClick={signOut}
-          className="sidebar-item w-full text-left hover:text-destructive"
-        >
-          <LogOut className="w-5 h-5" />
-          <span className="font-medium">Sign Out</span>
-        </button>
-      </div>
     </aside>
   );
 }

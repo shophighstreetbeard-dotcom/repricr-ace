@@ -8,7 +8,11 @@ const corsHeaders = {
 interface PriceUpdate {
   product_id: string;
   new_price: number;
+  reason?: string;
 }
+
+// Fixed user ID for private use
+const PRIVATE_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -26,29 +30,15 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get authorization header for user context
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      throw new Error('No authorization header');
+    const { updates } = await req.json() as { updates: PriceUpdate[] };
+
+    if (!updates || !Array.isArray(updates)) {
+      throw new Error('Invalid request: updates array required');
     }
 
-    // Get user from token
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-    
-    if (userError || !user) {
-      throw new Error('Invalid user token');
-    }
+    console.log(`Processing ${updates.length} price updates`);
 
-    const { updates }: { updates: PriceUpdate[] } = await req.json();
-
-    if (!updates || updates.length === 0) {
-      throw new Error('No price updates provided');
-    }
-
-    console.log(`Updating ${updates.length} prices for user ${user.id}`);
-
-    const results = [];
+    const results: { product_id: string; success: boolean; error?: string; old_price?: number; new_price?: number }[] = [];
 
     for (const update of updates) {
       try {
@@ -57,100 +47,81 @@ Deno.serve(async (req) => {
           .from('products')
           .select('*')
           .eq('id', update.product_id)
-          .eq('user_id', user.id)
+          .eq('user_id', PRIVATE_USER_ID)
           .single();
 
         if (productError || !product) {
-          results.push({
-            product_id: update.product_id,
-            success: false,
-            error: 'Product not found',
-          });
+          results.push({ product_id: update.product_id, success: false, error: 'Product not found' });
           continue;
         }
 
-        if (!product.takealot_offer_id) {
-          results.push({
-            product_id: update.product_id,
-            success: false,
-            error: 'No Takealot offer ID',
-          });
-          continue;
-        }
+        // Update price on Takealot if offer_id exists
+        if (product.takealot_offer_id) {
+          console.log(`Updating Takealot price for offer ${product.takealot_offer_id} to ${update.new_price}`);
+          
+          const takealotResponse = await fetch(
+            `https://seller-api.takealot.com/v2/offers/offer/${product.takealot_offer_id}`,
+            {
+              method: 'PATCH',
+              headers: {
+                'Authorization': `Key ${takealotApiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                selling_price: update.new_price,
+              }),
+            }
+          );
 
-        // Update price on Takealot - Official endpoint
-        const takealotResponse = await fetch(
-          `https://seller-api.takealot.com/v2/offers/offer/${product.takealot_offer_id}`,
-          {
-            method: 'PATCH',
-            headers: {
-              'Authorization': `Key ${takealotApiKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              selling_price: update.new_price,
-            }),
+          if (!takealotResponse.ok) {
+            const errorText = await takealotResponse.text();
+            console.error(`Takealot API error for ${product.takealot_offer_id}:`, errorText);
+            results.push({ 
+              product_id: update.product_id, 
+              success: false, 
+              error: `Takealot API error: ${takealotResponse.status}` 
+            });
+            continue;
           }
-        );
 
-        if (!takealotResponse.ok) {
-          const errorText = await takealotResponse.text();
-          console.error(`Takealot API error for product ${product.id}:`, errorText);
-          results.push({
-            product_id: update.product_id,
-            success: false,
-            error: `Takealot API error: ${takealotResponse.status}`,
-          });
-          continue;
+          console.log(`Successfully updated Takealot price for ${product.takealot_offer_id}`);
         }
 
         // Log price change
         await supabase.from('price_history').insert({
-          product_id: product.id,
+          product_id: update.product_id,
           old_price: product.current_price,
           new_price: update.new_price,
-          reason: 'Repricing rule applied',
+          reason: update.reason || 'Manual update',
         });
 
-        // Update local database
+        // Update local product price
         await supabase
           .from('products')
           .update({
             current_price: update.new_price,
             last_repriced_at: new Date().toISOString(),
           })
-          .eq('id', product.id);
+          .eq('id', update.product_id);
 
-        results.push({
-          product_id: update.product_id,
+        results.push({ 
+          product_id: update.product_id, 
           success: true,
           old_price: product.current_price,
-          new_price: update.new_price,
+          new_price: update.new_price
         });
-
-        console.log(`Updated price for product ${product.id}: ${product.current_price} -> ${update.new_price}`);
       } catch (error) {
-        console.error(`Error updating product ${update.product_id}:`, error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        results.push({
-          product_id: update.product_id,
-          success: false,
-          error: errorMessage,
-        });
+        console.error(`Error updating product ${update.product_id}:`, errorMessage);
+        results.push({ product_id: update.product_id, success: false, error: errorMessage });
       }
     }
 
     const successCount = results.filter(r => r.success).length;
-    console.log(`Price update complete: ${successCount}/${updates.length} succeeded`);
+    console.log(`Price update complete: ${successCount}/${updates.length} successful`);
 
     return new Response(
-      JSON.stringify({
-        success: true,
-        results,
-        total: updates.length,
-        succeeded: successCount,
-        failed: updates.length - successCount,
-      }),
+      JSON.stringify({ success: true, results, succeeded: successCount, failed: updates.length - successCount }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }

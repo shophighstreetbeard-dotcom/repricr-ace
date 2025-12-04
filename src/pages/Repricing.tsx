@@ -20,11 +20,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Plus, RefreshCw, Zap, TrendingDown, Target, Trash2 } from 'lucide-react';
+import { Plus, RefreshCw, Zap, TrendingDown, Target, Trash2, Brain } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+
+// Fixed user ID for private use
+const PRIVATE_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 const ruleSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100, 'Name too long'),
@@ -41,7 +43,6 @@ const ruleTypes = [
 ];
 
 export default function Repricing() {
-  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [isOpen, setIsOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -53,24 +54,23 @@ export default function Repricing() {
   });
 
   const { data: rules, isLoading } = useQuery({
-    queryKey: ['repricing-rules', user?.id],
+    queryKey: ['repricing-rules'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('repricing_rules')
         .select('*')
-        .eq('user_id', user?.id)
+        .eq('user_id', PRIVATE_USER_ID)
         .order('priority', { ascending: true });
       if (error) throw error;
       return data;
     },
-    enabled: !!user?.id,
   });
 
   const addRule = useMutation({
     mutationFn: async (data: typeof formData) => {
       const validated = ruleSchema.parse(data);
       const { error } = await supabase.from('repricing_rules').insert({
-        user_id: user?.id,
+        user_id: PRIVATE_USER_ID,
         name: validated.name,
         rule_type: validated.rule_type,
         price_adjustment: parseFloat(validated.price_adjustment),
@@ -114,6 +114,27 @@ export default function Repricing() {
     },
   });
 
+  const runAIRepricer = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-repricer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'AI Repricer failed');
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      toast.success(`AI Repricer: Analyzed ${data.analyzed} products, applied ${data.applied} price changes`);
+    },
+    onError: (error: any) => {
+      toast.error(error.message);
+    },
+  });
+
   const getRuleIcon = (type: string) => {
     const rule = ruleTypes.find(r => r.value === type);
     return rule?.icon || RefreshCw;
@@ -121,6 +142,33 @@ export default function Repricing() {
 
   return (
     <DashboardLayout title="Repricing Rules" subtitle="Set up automated pricing strategies">
+      {/* AI Repricer Card */}
+      <Card className="mb-8 bg-gradient-to-r from-accent/10 to-accent/5 border-accent/20">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-xl bg-accent/20 flex items-center justify-center">
+                <Brain className="w-7 h-7 text-accent" />
+              </div>
+              <div>
+                <h3 className="font-display text-lg font-semibold">AI-Powered Repricing</h3>
+                <p className="text-sm text-muted-foreground">
+                  Let Gemini AI analyze your products and competitors to find optimal prices
+                </p>
+              </div>
+            </div>
+            <Button 
+              onClick={() => runAIRepricer.mutate()}
+              disabled={runAIRepricer.isPending}
+              className="bg-accent hover:bg-accent/90"
+            >
+              <Brain className={`w-4 h-4 mr-2 ${runAIRepricer.isPending ? 'animate-pulse' : ''}`} />
+              {runAIRepricer.isPending ? 'Analyzing...' : 'Run AI Repricer'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         {ruleTypes.map((type) => (
           <Card key={type.value} className="stat-card">
@@ -240,11 +288,11 @@ export default function Repricing() {
             <div className="text-center py-12">
               <RefreshCw className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
               <h3 className="font-semibold text-lg mb-2">No repricing rules</h3>
-              <p className="text-muted-foreground mb-4">Create your first rule to start automated repricing</p>
+              <p className="text-muted-foreground mb-4">Create your first rule or use AI Repricer</p>
             </div>
           ) : (
             <div className="space-y-4">
-              {rules?.map((rule, index) => {
+              {rules?.map((rule) => {
                 const Icon = getRuleIcon(rule.rule_type);
                 return (
                   <div

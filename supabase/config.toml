@@ -2,3 +2,12 @@ project_id = "kwrqqqiusycljrwhtbzh"
 
 [functions.takealot-webhook]
 verify_jwt = false
+
+[functions.sync-takealot-products]
+verify_jwt = false
+
+[functions.update-takealot-prices]
+verify_jwt = false
+
+[functions.ai-repricer]
+verify_jwt = false

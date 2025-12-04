@@ -14,7 +14,12 @@ interface TakealotProduct {
   warehouse_stock?: number;
   image_url?: string;
   buy_box_winner?: boolean;
+  cost_price?: number;
+  rrp?: number;
 }
+
+// Fixed user ID for private use
+const PRIVATE_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -32,22 +37,8 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get authorization header for user context
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      throw new Error('No authorization header');
-    }
-
-    // Get user from token
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-    
-    if (userError || !user) {
-      throw new Error('Invalid user token');
-    }
-
-    console.log(`Syncing products for user ${user.id}`);
-    console.log(`Using API key: ${takealotApiKey.substring(0, 10)}...`);
+    console.log(`Syncing products for private user`);
+    console.log(`Using API key: ${takealotApiKey.substring(0, 20)}...`);
 
     // Fetch products from Takealot API - Official endpoint
     const takealotResponse = await fetch('https://seller-api.takealot.com/v2/offers', {
@@ -68,7 +59,19 @@ Deno.serve(async (req) => {
     }
 
     const takealotData = await takealotResponse.json();
-    const products: TakealotProduct[] = takealotData.data || [];
+    console.log('Takealot API response structure:', JSON.stringify(takealotData).substring(0, 500));
+    
+    // Handle different possible response structures
+    let products: TakealotProduct[] = [];
+    if (Array.isArray(takealotData)) {
+      products = takealotData;
+    } else if (takealotData.data && Array.isArray(takealotData.data)) {
+      products = takealotData.data;
+    } else if (takealotData.offers && Array.isArray(takealotData.offers)) {
+      products = takealotData.offers;
+    } else if (takealotData.results && Array.isArray(takealotData.results)) {
+      products = takealotData.results;
+    }
 
     console.log(`Fetched ${products.length} products from Takealot`);
 
@@ -81,11 +84,16 @@ Deno.serve(async (req) => {
       const stock = (takealotProduct.leadtime_stock || 0) + (takealotProduct.warehouse_stock || 0);
       
       // Check if product exists
-      const { data: existingProducts } = await supabase
+      const { data: existingProducts, error: queryError } = await supabase
         .from('products')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', PRIVATE_USER_ID)
         .or(`sku.eq.${takealotProduct.sku},takealot_offer_id.eq.${takealotProduct.offer_id}`);
+
+      if (queryError) {
+        console.error('Error querying products:', queryError);
+        continue;
+      }
 
       const now = new Date().toISOString();
 
@@ -103,7 +111,7 @@ Deno.serve(async (req) => {
           });
         }
 
-        await supabase
+        const { error: updateError } = await supabase
           .from('products')
           .update({
             title: takealotProduct.title,
@@ -113,14 +121,19 @@ Deno.serve(async (req) => {
             last_synced_at: now,
             image_url: takealotProduct.image_url || existing.image_url,
             buy_box_status: takealotProduct.buy_box_winner ? 'won' : 'lost',
+            cost_price: takealotProduct.cost_price || existing.cost_price,
           })
           .eq('id', existing.id);
         
-        updatedCount++;
+        if (updateError) {
+          console.error('Error updating product:', updateError);
+        } else {
+          updatedCount++;
+        }
       } else {
         // Create new product
-        await supabase.from('products').insert({
-          user_id: user.id,
+        const { error: insertError } = await supabase.from('products').insert({
+          user_id: PRIVATE_USER_ID,
           sku: takealotProduct.sku,
           title: takealotProduct.title,
           current_price: takealotProduct.selling_price,
@@ -130,13 +143,26 @@ Deno.serve(async (req) => {
           image_url: takealotProduct.image_url,
           buy_box_status: takealotProduct.buy_box_winner ? 'won' : 'unknown',
           is_active: true,
+          cost_price: takealotProduct.cost_price,
         });
         
-        createdCount++;
+        if (insertError) {
+          console.error('Error inserting product:', insertError);
+        } else {
+          createdCount++;
+        }
       }
       
       syncedCount++;
     }
+
+    // Update last sync time in profiles
+    await supabase
+      .from('profiles')
+      .upsert({
+        user_id: PRIVATE_USER_ID,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' });
 
     console.log(`Sync complete: ${createdCount} created, ${updatedCount} updated`);
 
