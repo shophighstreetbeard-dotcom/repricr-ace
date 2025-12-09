@@ -7,19 +7,19 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
-import { User, Bell, Shield, Key, Save, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { User, Bell, Shield, Key, Save, Loader2, CheckCircle2, Info, Lock } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export default function Settings() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [fullName, setFullName] = useState('');
   const [companyName, setCompanyName] = useState('');
-  const [takealotApiKey, setTakealotApiKey] = useState('');
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['profile', user?.id],
@@ -55,7 +55,6 @@ export default function Settings() {
     if (profile) {
       setFullName(profile.full_name || '');
       setCompanyName(profile.company_name || '');
-      setTakealotApiKey(profile.takealot_api_key || '');
     }
   }, [profile]);
 
@@ -66,7 +65,6 @@ export default function Settings() {
         .update({
           full_name: fullName,
           company_name: companyName,
-          takealot_api_key: takealotApiKey,
         })
         .eq('user_id', user?.id);
       if (error) throw error;
@@ -154,23 +152,25 @@ export default function Settings() {
           <Card>
             <CardHeader>
               <CardTitle className="font-display">API Integration</CardTitle>
-              <CardDescription>Connect your Takealot seller account</CardDescription>
+              <CardDescription>Takealot API connection status</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              <Alert className="border-green-500/20 bg-green-500/5">
+                <Lock className="h-4 w-4 text-green-600" />
+                <AlertTitle className="text-green-600">Secure Configuration</AlertTitle>
+                <AlertDescription className="text-muted-foreground">
+                  Your Takealot API key is securely stored in the backend and is not accessible from the browser. 
+                  This prevents exposure through network logs or browser developer tools.
+                </AlertDescription>
+              </Alert>
+              
               <div className="rounded-lg border border-border p-4 bg-muted/50 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Connection Status</span>
-                  {takealotApiKey ? (
-                    <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
-                      <CheckCircle2 className="w-3 h-3 mr-1" />
-                      Connected
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline">
-                      <XCircle className="w-3 h-3 mr-1" />
-                      Not Connected
-                    </Badge>
-                  )}
+                  <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
+                    <CheckCircle2 className="w-3 h-3 mr-1" />
+                    Configured
+                  </Badge>
                 </div>
                 {lastSync && (
                   <div className="flex items-center justify-between text-sm">
@@ -179,22 +179,19 @@ export default function Settings() {
                   </div>
                 )}
               </div>
+              
               <Separator />
-              <div className="space-y-2">
-                <Label htmlFor="takealotKey">Takealot API Key</Label>
-                <Input
-                  id="takealotKey"
-                  type="password"
-                  value={takealotApiKey}
-                  onChange={(e) => setTakealotApiKey(e.target.value)}
-                  placeholder="Enter your Takealot API key"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Find your API key in your Takealot Seller Portal under Settings → API
-                </p>
-              </div>
-              <Separator />
+              
               <div className="space-y-4">
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertTitle>API Key Management</AlertTitle>
+                  <AlertDescription>
+                    To update your Takealot API key, please contact support or use the backend configuration. 
+                    API keys are stored securely and never transmitted to the browser for security.
+                  </AlertDescription>
+                </Alert>
+                
                 <div>
                   <h4 className="font-semibold mb-2">Webhook URL</h4>
                   <p className="text-sm text-muted-foreground mb-2">
@@ -217,45 +214,17 @@ export default function Settings() {
                     </Button>
                   </div>
                 </div>
+                
                 <div className="rounded-lg border border-border p-4 bg-muted/50">
-                  <h4 className="font-semibold mb-2">Setup Instructions</h4>
+                  <h4 className="font-semibold mb-2">How to Use</h4>
                   <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
-                    <li>Log in to your <a href="https://seller.takealot.com" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">Takealot Seller Portal</a></li>
-                    <li>Navigate to Settings → API Access</li>
-                    <li>Generate a new API key and paste it in the field above</li>
-                    <li>
-                      <strong className="text-foreground">Important:</strong> Copy your API key exactly as shown (it usually starts with a long alphanumeric string)
-                    </li>
-                    <li>Add the webhook URL above to receive real-time updates (optional)</li>
-                    <li>Click "Save API Key" below, then go to the Products page</li>
-                    <li>Click "Sync from Takealot" to import your products</li>
+                    <li>Your Takealot API key is pre-configured in the backend</li>
+                    <li>Go to the Products page and click "Sync from Takealot"</li>
+                    <li>Products will be automatically imported and synced</li>
+                    <li>Optionally configure the webhook URL above for real-time updates</li>
                   </ol>
                 </div>
-                <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-4">
-                  <h4 className="font-semibold mb-2 text-yellow-600 dark:text-yellow-400 flex items-center gap-2">
-                    <Bell className="w-4 h-4" />
-                    Troubleshooting
-                  </h4>
-                  <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
-                    <li>If you get a 401 error, double-check your API key is correct</li>
-                    <li>Make sure you copied the entire API key without extra spaces</li>
-                    <li>The API key should be saved in your Takealot Seller Portal first</li>
-                    <li>Contact Takealot support if you can't find the API section</li>
-                  </ul>
-                </div>
               </div>
-              <Button 
-                onClick={() => updateProfile.mutate()} 
-                className="bg-accent hover:bg-accent/90"
-                disabled={updateProfile.isPending}
-              >
-                {updateProfile.isPending ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Save className="w-4 h-4 mr-2" />
-                )}
-                Save API Key
-              </Button>
             </CardContent>
           </Card>
         </TabsContent>

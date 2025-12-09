@@ -30,17 +30,25 @@ function calculateStock(leadtimeStock: LeadtimeStock[] | undefined): number {
   return leadtimeStock.reduce((total, item) => total + (item.quantity_available || 0), 0);
 }
 
-// Verify API key authentication
-function verifyApiKey(req: Request): boolean {
-  const apiKey = req.headers.get('x-api-key');
+// Verify API key authentication (fail-closed: deny if secret not configured)
+function verifyApiKey(req: Request): { valid: boolean; error?: string } {
   const expectedKey = Deno.env.get('EDGE_FUNCTION_API_KEY');
   
   if (!expectedKey) {
-    console.warn('EDGE_FUNCTION_API_KEY not configured - authentication disabled');
-    return true; // Allow if not configured (for backward compatibility during setup)
+    console.error('EDGE_FUNCTION_API_KEY not configured - denying request for security');
+    return { valid: false, error: 'Server configuration error: API key authentication not configured' };
   }
   
-  return apiKey === expectedKey;
+  const apiKey = req.headers.get('x-api-key');
+  if (!apiKey) {
+    return { valid: false, error: 'Missing x-api-key header' };
+  }
+  
+  if (apiKey !== expectedKey) {
+    return { valid: false, error: 'Invalid API key' };
+  }
+  
+  return { valid: true };
 }
 
 Deno.serve(async (req) => {
@@ -48,11 +56,12 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Verify API key
-  if (!verifyApiKey(req)) {
-    console.error('Unauthorized: Invalid or missing API key');
+  // Verify API key (fail-closed)
+  const authResult = verifyApiKey(req);
+  if (!authResult.valid) {
+    console.error('Unauthorized:', authResult.error);
     return new Response(
-      JSON.stringify({ error: 'Unauthorized: Invalid or missing API key' }),
+      JSON.stringify({ error: `Unauthorized: ${authResult.error}` }),
       { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
